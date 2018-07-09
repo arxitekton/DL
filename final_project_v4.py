@@ -198,8 +198,9 @@ def evaluate(model, X_train, y_train, X_test, y_test, iteration=100, alpha = 0.1
         accur.append(acc)
         err = np.mean(np.abs(model.out_error))
         error.append(err)
+        epochList.append(epoch)
 
-    return epochList, error, acc
+    return epochList, error, accur
 
 
 model = NN(ni=XTrain.shape[1], nh1=55, nh2=55, no = YTrain.shape[1])
@@ -210,6 +211,9 @@ batch_size = 40
 
 
 epochList, error_list, accuracy_list = evaluate(model, XTrain, YTrain, XTest, YTest, iteration, alpha, batch_size)
+print(len(epochList))
+print(len(error_list))
+print(len(accuracy_list))
 
 #plot graph
 plt.plot(epochList, error_list)
