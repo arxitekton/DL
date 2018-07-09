@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 
 
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import accuracy_score
 
 
 train_filename = "adult.data"
@@ -81,7 +82,7 @@ def relu(x):
 
 def d_relu(a):
     d = np.zeros_like(a)
-    d[np.where(a >= 0.0)] = 1.0
+    d[np.where(a > 0.0)] = 1.0
 
     return d
 
@@ -93,7 +94,7 @@ def d_tanh(x):
 
     return 1.0 - np.tanh(x) ** 2
 
-
+# https://deepnotes.io/softmax-crossentropy
 def cross_entropy(p, t):
     s = t.shape[0]
     log_likelihood = -np.log(p[range(s), np.argmax(t, axis=1)])
@@ -125,18 +126,6 @@ class NN:
         self.bh2 = np.random.rand(nh2) / (np.sqrt(nh2) * 1e3)
         self.bo = np.random.rand(no) / (np.sqrt(no) * 1e3)
 
-    def cross_entropy(self, p, t):
-        s = t.shape[0]
-        log_likelihood = -np.log(p[range(s), np.argmax(t, axis=1)])
-
-        return np.sum(log_likelihood) / s
-
-    def d_cross_entropy(self, g, y):
-        m = y.shape[0]
-        g[range(m), np.argmax(y, axis=1)] -= 1
-        g = g / m
-
-        return g
 
     def feedFwd(self, X):
         ai = X
@@ -149,7 +138,7 @@ class NN:
 
     def backProp(self, ai, ah1, ah2, ao, y, batchSize=1):
 
-        delOut = self.d_cross_entropy(ao, y)
+        delOut = d_cross_entropy(ao, y)
         delHidden2 = delOut.dot(self.wout.T) * d_relu(ah2)
         delHidden1 = delHidden2.dot(self.wh1h2.T) * d_tanh(ah1)
 
@@ -165,20 +154,23 @@ class NN:
     def fit(self, X, y, alpha=0.1):
         self.learning_rate = alpha
         ai, ah1, ah2, ao = self.feedFwd(X)
-        self.out_error = self.cross_entropy(ao, y)
+        self.out_error = cross_entropy(ao, y)
         self.backProp(ai, ah1, ah2, ao, y)
 
     def predict(self, X):
         ai, ah1, ah2, ao = self.feedFwd(X)
         return ao
 
-def accuracy(pred, y_true):
-    pr_cl = [np.argmax(pred) + 1 for pred in pred]
-    y_cl = [np.argmax(pred) + 1 for pred in y_true]
-    res = 0
-    for xc, yc in zip(pr_cl, y_cl):
-        res += 0 if xc == yc else 1
-    return ((len(pr_cl) - res)/len(pr_cl))*100
+
+def accuracy_metric(actual, predicted):
+    actual = np.argmax(actual, axis=1)
+    predicted = np.argmax(predicted, axis=1)
+
+    correct = 0
+    for i in range(len(actual)):
+        if actual[i] == predicted[i]:
+            correct += 1
+    return correct / float(len(actual)) * 100.0
 
 def evaluate(model, X_train, y_train, X_test, y_test, iteration=100, alpha = 0.1, batch_size = 10):
 
@@ -194,7 +186,7 @@ def evaluate(model, X_train, y_train, X_test, y_test, iteration=100, alpha = 0.1
             batch_y = y_train[batch_offset:min(batch_offset+batch_size, y_train.shape[0]),:]
             model.fit(batch_X, batch_y, alpha=alpha)
         y_pred = model.predict(X_test)
-        acc = accuracy(y_pred, y_test)
+        acc = accuracy_metric(y_pred, y_test)
         accur.append(acc)
         err = np.mean(np.abs(model.out_error))
         error.append(err)
@@ -211,14 +203,13 @@ batch_size = 40
 
 
 epochList, error_list, accuracy_list = evaluate(model, XTrain, YTrain, XTest, YTest, iteration, alpha, batch_size)
-print(len(epochList))
-print(len(error_list))
-print(len(accuracy_list))
+
 
 #plot graph
 plt.plot(epochList, error_list)
-plt.plot(epochList, accuracy_list)
 plt.xlabel('Number of epoch')
 plt.ylabel('Error')
 plt.savefig('loss-function.png')
 plt.show()
+
+print(sum(accuracy_list))
