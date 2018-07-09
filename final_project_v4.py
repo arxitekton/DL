@@ -35,7 +35,7 @@ data = pd.concat([data, df_cat], axis=1)
 data['target'] = data['target'].map({' <=50K.': ' <=50K', ' >50K.': ' >50K'})
 
 # drop useless categorical column
-data.drop(catFeatures, axis=1,inplace=True)
+data.drop(catFeatures, axis=1, inplace=True)
 
 #INTEGER
 intFeatures = ['age','fnlwgt','education-num','capital-gain','capital-loss','hours-per-week']
@@ -92,7 +92,7 @@ def tanh(x):
 
 def d_tanh(x):
 
-    return 1.0 - np.tanh(x) ** 2
+    return 1.0 - x ** 2
 
 # https://deepnotes.io/softmax-crossentropy
 def cross_entropy(p, t):
@@ -117,18 +117,23 @@ class NN:
         self.nh2 = nh2
         self.no = no
 
-        self.wih1 = np.random.rand(ni, nh1) / (np.sqrt(ni * nh1) * 1e3)
-        self.wh1h2 = np.random.rand(nh1, nh2) / (np.sqrt(nh1 * nh2) * 1e3)
-        self.wres = np.random.rand(ni, no) / (np.sqrt(ni * no) * 1e3)
-        self.wout = np.random.rand(nh2, no) / (np.sqrt(nh2* no) * 1e3)
+        # He Initialization
+        # self.wih1 = np.random.rand(inputCount, hiddenCount1)*np.sqrt(2./inputCount)
 
-        self.bh1 = np.random.rand(nh1) / (np.sqrt(nh1) * 1e3)
-        self.bh2 = np.random.rand(nh2) / (np.sqrt(nh2) * 1e3)
-        self.bo = np.random.rand(no) / (np.sqrt(no) * 1e3)
+        # Xavier Parameter Initialization
+        self.wih1 = np.random.rand(ni, nh1) * np.sqrt(6) / (np.sqrt(ni * nh1))
+        self.wh1h2 = np.random.rand(nh1, nh2) * np.sqrt(6) / (np.sqrt(nh1 * nh2))
+        self.wres = np.random.rand(ni, no) * np.sqrt(6) / (np.sqrt(ni * no))
+        self.wout = np.random.rand(nh2, no) * np.sqrt(6) / (np.sqrt(nh2* no))
+
+        self.bh1 = np.random.rand(nh1) * np.sqrt(6) / (np.sqrt(nh1))
+        self.bh2 = np.random.rand(nh2) * np.sqrt(6) / (np.sqrt(nh2))
+        self.bo = np.random.rand(no) * np.sqrt(6) / (np.sqrt(no))
+        self.alpha = 0.01
 
 
-    def feedFwd(self, X):
-        ai = X
+    def feedFwd(self, features):
+        ai = features
         ah1 = tanh(np.dot(ai, self.wih1) + self.bh1)
         ah2 = relu(np.dot(ah1, self.wh1h2) + self.bh2)
         ao = softmax(np.dot(ah2, self.wout) + np.dot(ai, self.wres) + self.bo)
@@ -142,20 +147,20 @@ class NN:
         delHidden2 = delOut.dot(self.wout.T) * d_relu(ah2)
         delHidden1 = delHidden2.dot(self.wh1h2.T) * d_tanh(ah1)
 
-        self.wout -= self.learning_rate * ah2.T.dot(delOut)
-        self.wres -= self.learning_rate * ai.T.dot(delOut)
-        self.wh1h2 -= self.learning_rate * ah1.T.dot(delHidden2)
-        self.wih1 -= self.learning_rate * ai.T.dot(delHidden1)
+        self.wout = self.alpha * ah2.T.dot(delOut)/batchSize
+        self.wres = self.alpha * ai.T.dot(delOut)/batchSize
+        self.wh1h2 = self.alpha * ah1.T.dot(delHidden2)/batchSize
+        self.wih1 = self.alpha * ai.T.dot(delHidden1)/batchSize
 
-        self.bo -= self.learning_rate * np.sum(delOut, axis=0)
-        self.bh2 -= self.learning_rate * np.sum(delHidden2, axis=0)
-        self.bh1 -= self.learning_rate * np.sum(delHidden1, axis=0)
+        self.bo = self.alpha * np.sum(delOut, axis=0)/batchSize
+        self.bh2 = self.alpha * np.sum(delHidden2, axis=0)/batchSize
+        self.bh1 = self.alpha * np.sum(delHidden1, axis=0)/batchSize
 
-    def fit(self, X, y, alpha=0.1):
-        self.learning_rate = alpha
+    def fit(self, X, y, batchSize=1, alpha=0.1):
+        self.alpha = alpha
         ai, ah1, ah2, ao = self.feedFwd(X)
         self.out_error = cross_entropy(ao, y)
-        self.backProp(ai, ah1, ah2, ao, y)
+        self.backProp(ai, ah1, ah2, ao, y, batchSize=1)
 
     def predict(self, X):
         ai, ah1, ah2, ao = self.feedFwd(X)
@@ -170,39 +175,55 @@ def accuracy_metric(actual, predicted):
     for i in range(len(actual)):
         if actual[i] == predicted[i]:
             correct += 1
+
     return correct / float(len(actual)) * 100.0
 
-def evaluate(model, X_train, y_train, X_test, y_test, iteration=100, alpha = 0.1, batch_size = 10):
 
+def train(model, X, Y, iteration=1000, alpha=0.001, batchSize=1, beta=0.099, decayRate=0.0005):
+    errorTimeline = []
     epochList = []
-    accur = []
-    error = []
 
-    batch_count = int(np.ceil(len(X_train)/batch_size))
+    # train it for iteration number of epoch
     for epoch in range(iteration):
-        for batch_number in range(batch_count):
-            batch_offset = batch_number*batch_size
-            batch_X = X_train[batch_offset:min(batch_offset+batch_size, X_train.shape[0]),:]
-            batch_y = y_train[batch_offset:min(batch_offset+batch_size, y_train.shape[0]),:]
-            model.fit(batch_X, batch_y, alpha=alpha)
-        y_pred = model.predict(X_test)
-        acc = accuracy_metric(y_pred, y_test)
-        accur.append(acc)
-        err = np.mean(np.abs(model.out_error))
-        error.append(err)
-        epochList.append(epoch)
 
-    return epochList, error, accur
+        # for each mini batch
+        for i in range(0, X.shape[0], batchSize):
+            # split the dataset into mini batches
+            batchSplit = min(i + batchSize, X.shape[0])
+            XminiBatch = X[i:batchSplit, :]
+            YminiBatch = Y[i:batchSplit]
 
+            # calculate a forwasd pass through the network
+            ai, ah1, ah2, ao = model.feedFwd(XminiBatch)
 
-model = NN(ni=XTrain.shape[1], nh1=55, nh2=55, no = YTrain.shape[1])
+            # calculate mean squared error
+            error = 0.5 * np.sum((YminiBatch - ao) ** 2) / batchSize
+            # print error
+
+            # backprop and update weights
+            model.backProp(ai, ah1, ah2, ao, YminiBatch, batchSize=1)
+
+        # after every 50 iteration decrease momentum and learning rate
+        # decreasing momentum helps reduce the chances of overshooting a convergence point
+        step = 1
+        if epoch % step == 0 and epoch > 0:
+            model.alpha *= 1. / (1. + (decayRate * epoch))
+            #beta *= 1. / (1. + (decayRate * epoch))
+            # Store error for ploting graph
+            errorTimeline.append(error)
+            epochList.append(epoch)
+            print('Epoch :', epoch, ', Error :', error, ', alpha :', model.alpha)
+
+    return epochList, errorTimeline
+
+model = NN(ni=XTrain.shape[1], nh1=35, nh2=35, no=YTrain.shape[1])
 
 iteration = 100
-alpha = 0.005
-batch_size = 40
+alpha = 0.01
+batch_size = 20
 
 
-epochList, error_list, accuracy_list = evaluate(model, XTrain, YTrain, XTest, YTest, iteration, alpha, batch_size)
+epochList, error_list = train(model, XTrain, YTrain, iteration=iteration, alpha=alpha, batchSize=batch_size, beta=0.099, decayRate=0.0005)
 
 
 #plot graph
@@ -212,4 +233,3 @@ plt.ylabel('Error')
 plt.savefig('loss-function.png')
 plt.show()
 
-print(sum(accuracy_list))
